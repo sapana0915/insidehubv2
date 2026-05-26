@@ -12,3 +12,11 @@ httpx==0.25.2
 pytest==7.4.3
 pytest-asyncio==0.21.1
 pytest-cov==4.1.0
+
+# Celery & Task Queue
+celery==5.3.4
+redis==5.0.1
+flower==2.0.1
+
+# Message Broker
+kombu==5.3.4
