@@ -1,6 +1,10 @@
 """Celery application configuration."""
 from celery import Celery
+
 from app.core.config import settings
+
+# Register all SQLAlchemy models so FK metadata resolves in workers
+from app.users.models import User  # noqa: F401
 
 celery_app = Celery(
     "fastapi_app",
