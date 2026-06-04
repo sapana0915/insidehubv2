@@ -35,7 +35,8 @@ class RequestWrapper:
         return dict(await self.request.form())
 
     def get_user_id(self) -> int:
-        return self.user.get("sub")
+        uid = self.user.get("user_id") or self.user.get("sub")
+        return int(uid)
 
     def get_user_role(self) -> str:
         return self.user.get("role")
@@ -50,9 +51,9 @@ async def get_request_wrapper(
 async def get_optional_request_wrapper(request: Request) -> RequestWrapper:
     """Get request wrapper with optional authentication"""
     try:
-        from fastapi.security import HTTPBearer, HTTPAuthCredentials
+        from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
         security = HTTPBearer()
-        credentials: HTTPAuthCredentials = await security(request)
+        credentials: HTTPAuthorizationCredentials = await security(request)
         from app.core.security import decode_token
         user = decode_token(credentials.credentials)
     except Exception:
