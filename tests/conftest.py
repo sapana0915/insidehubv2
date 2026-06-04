@@ -1,5 +1,9 @@
+import os
+
 import pytest
 from sqlalchemy import create_engine
+
+os.environ.setdefault("ENVIRONMENT", "test")
 from sqlalchemy.orm import sessionmaker
 from app.database import Base, get_db
 from app.main import app
@@ -33,5 +37,8 @@ def client():
 @pytest.fixture
 def db():
     Base.metadata.create_all(bind=engine)
-    yield TestingSessionLocal()
-    Base.metadata.drop_all(bind=engine)
+    session = TestingSessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
