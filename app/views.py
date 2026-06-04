@@ -1,5 +1,4 @@
-import inspect
-from typing import Any, Dict, List, Optional, Type
+from typing import Dict, List, Optional, Type
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, create_model

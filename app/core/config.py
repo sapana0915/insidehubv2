@@ -1,13 +1,14 @@
+from __future__ import annotations
 import json
 import os
-from typing import Any, List, Literal
+from typing import Any, Dict, List, Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["dev", "prod", "test"]
 
-CONFIG: dict[str, dict[str, Any]] = {
+CONFIG: Dict[str, Dict[str, Any]] = {
     "dev": {
         "DEBUG": True,
         "SECRET_KEY": "dev-secret-key-change-in-production",
@@ -38,7 +39,7 @@ CONFIG: dict[str, dict[str, Any]] = {
 }
 
 
-def _env_block() -> dict[str, Any]:
+def _env_block() -> Dict[str, Any]:
     env = os.getenv("ENVIRONMENT", "dev").lower()
     if env not in CONFIG:
         env = "dev"
@@ -69,7 +70,7 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs: Any) -> None:
         block = _env_block()
-        merged: dict[str, Any] = {}
+        merged: Dict[str, Any] = {}
         for key in (
             "DEBUG",
             "SECRET_KEY",
