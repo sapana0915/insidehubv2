@@ -1,22 +1,41 @@
+from typing import Any, Optional
+
 from sqlalchemy.orm import Session
-from .repositories import UserRepository
-from .models import User
-from .schemas import UserCreate, UserUpdate
-from app.core.security import hash_password, verify_password
+
 from app.core.exceptions import ConflictException, UnauthorizedException
+from app.core.security import hash_password, verify_password
+from .models import User
+from .repositories import UserRepository
+from .schemas import UserCreate, UserUpdate
 
 
 class UserService:
+    model = User
+
     @staticmethod
-    async def get(db: Session, user_id: int) -> User:
+    def get(db: Session, user_id: int) -> User:
         return UserRepository.get_by_id(db, user_id)
 
     @staticmethod
-    async def list(db: Session, skip: int = 0, limit: int = 10) -> list:
-        return UserRepository.list_all(db, skip=skip, limit=limit)
+    def list(
+        db: Session,
+        skip: int = 0,
+        limit: int = 10,
+        filters: Any = None,
+        request: Any = None,
+        viewset: Any = None,
+    ) -> list:
+        query = db.query(User)
+        if filters:
+            query = filters.apply(query, User)
+        if viewset and viewset.owner_field and request and not viewset._is_admin(request):
+            column = getattr(User, viewset.owner_field)
+            uid = viewset._get_user_id(request)
+            query = query.filter(column == uid)
+        return query.offset(skip).limit(limit).all()
 
     @staticmethod
-    async def create(db: Session, user_data: UserCreate) -> User:
+    def create(db: Session, user_data: UserCreate) -> User:
         existing_user = UserRepository.get_by_email(db, user_data.email)
         if existing_user:
             raise ConflictException("Email already registered")
@@ -34,7 +53,7 @@ class UserService:
         return UserRepository.create(db, user)
 
     @staticmethod
-    async def update(db: Session, user_id: int, user_data: UserUpdate) -> User:
+    def update(db: Session, user_id: int, user_data: UserUpdate) -> User:
         user = UserRepository.get_by_id(db, user_id)
 
         if user_data.email and user_data.email != user.email:
@@ -58,15 +77,15 @@ class UserService:
         return UserRepository.update(db, user)
 
     @staticmethod
-    async def partial_update(db: Session, user_id: int, user_data: UserUpdate) -> User:
-        return await UserService.update(db, user_id, user_data)
+    def partial_update(db: Session, user_id: int, user_data: UserUpdate) -> User:
+        return UserService.update(db, user_id, user_data)
 
     @staticmethod
-    async def delete(db: Session, user_id: int) -> None:
+    def delete(db: Session, user_id: int) -> None:
         UserRepository.delete(db, user_id)
 
     @staticmethod
-    async def authenticate(db: Session, email: str, password: str) -> User:
+    def authenticate(db: Session, email: str, password: str) -> User:
         user = UserRepository.get_by_email(db, email)
         if not user or not verify_password(password, user.hashed_password):
             raise UnauthorizedException("Invalid credentials")
