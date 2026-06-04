@@ -3,7 +3,7 @@ from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import settings
 from app.core.exceptions import UnauthorizedException
@@ -41,5 +41,5 @@ def decode_token(token: str) -> dict:
         raise UnauthorizedException("Invalid authentication credentials")
 
 
-async def get_token_payload(credentials: HTTPAuthCredentials = Depends(security)) -> dict:
+async def get_token_payload(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     return decode_token(credentials.credentials)
