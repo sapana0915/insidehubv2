@@ -95,47 +95,46 @@ def create_app(args):
 
     # Create all required files
     files = {
-        "models.py": '''from sqlalchemy import Column, Integer, String, DateTime, Boolean
-from datetime import datetime
+        "models.py": '''from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.sql import func
+
 from app.database import Base
 
 
 class {ModelClass}(Base):
-    """TODO: Update this model with your fields."""
     __tablename__ = "{table_name}"
 
-    id = Column(Integer, primary_key=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 ''',
-        "schemas.py": '''from pydantic import BaseModel
-from datetime import datetime
+        "schemas.py": '''from datetime import datetime
 from typing import Optional
+
+from pydantic import BaseModel, ConfigDict
 
 
 class {ModelClass}Base(BaseModel):
-    """Base schema for {ModelClass}."""
-    pass
+    name: str
 
 
 class {ModelClass}Create({ModelClass}Base):
-    """Schema for creating {ModelClass}."""
     pass
 
 
 class {ModelClass}Update(BaseModel):
-    """Schema for updating {ModelClass}."""
-    pass
+    name: Optional[str] = None
 
 
 class {ModelClass}Response({ModelClass}Base):
-    """Response schema for {ModelClass}."""
-    id: int
-    created_at: datetime
-    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
 
-    class Config:
-        from_attributes = True
+    id: int
+    owner_id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
 ''',
         "repositories.py": '''from sqlalchemy.orm import Session
 from .models import {ModelClass}
@@ -161,7 +160,7 @@ class {ModelClass}Repository:
 
     @staticmethod
     def update(db: Session, db_obj: {ModelClass}, obj_in) -> {ModelClass}:
-        update_data = obj_in.dict(exclude_unset=True)
+        update_data = obj_in.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(db_obj, field, value)
         db.add(db_obj)
@@ -178,122 +177,89 @@ class {ModelClass}Repository:
             return True
         return False
 ''',
-        "services.py": '''from sqlalchemy.orm import Session
+        "services.py": '''from typing import Any
+
+from sqlalchemy.orm import Session
+
+from .models import {ModelClass}
 from .repositories import {ModelClass}Repository
 from .schemas import {ModelClass}Create, {ModelClass}Update
 
 
 class {ModelClass}Service:
-    """Business logic layer for {ModelClass}."""
+    model = {ModelClass}
 
     @staticmethod
-    async def get(db: Session, id: int):
+    def get(db: Session, id: int):
         return {ModelClass}Repository.get_by_id(db, id)
 
     @staticmethod
-    async def list(db: Session, skip: int = 0, limit: int = 100):
-        return {ModelClass}Repository.list_all(db, skip, limit)
+    def list(db: Session, skip: int = 0, limit: int = 100, filters: Any = None, request: Any = None, viewset: Any = None):
+        query = db.query({ModelClass})
+        if filters:
+            query = filters.apply(query, {ModelClass})
+        if viewset and viewset.owner_field and request and not viewset._is_admin(request):
+            column = getattr({ModelClass}, viewset.owner_field)
+            query = query.filter(column == viewset._get_user_id(request))
+        return query.offset(skip).limit(limit).all()
 
     @staticmethod
-    async def create(db: Session, data: {ModelClass}Create):
-        from .models import {ModelClass}
-        obj = {ModelClass}(**data.dict())
+    def create(db: Session, data: {ModelClass}Create):
+        payload = data.model_dump()
+        obj = {ModelClass}(**payload)
         return {ModelClass}Repository.create(db, obj)
 
     @staticmethod
-    async def update(db: Session, id: int, data: {ModelClass}Update):
+    def update(db: Session, id: int, data: {ModelClass}Update):
         obj = {ModelClass}Repository.get_by_id(db, id)
-        if not obj:
-            return None
         return {ModelClass}Repository.update(db, obj, data)
 
     @staticmethod
-    async def delete(db: Session, id: int) -> bool:
-        return {ModelClass}Repository.delete(db, id)
+    def partial_update(db: Session, id: int, data: {ModelClass}Update):
+        return {ModelClass}Service.update(db, id, data)
+
+    @staticmethod
+    def delete(db: Session, id: int) -> None:
+        {ModelClass}Repository.delete(db, id)
 ''',
-        "filters.py": '''from typing import Optional
-from pydantic import BaseModel
+        "filters.py": '''from typing import ClassVar, Dict, Optional
+
+from app.core.filters import BaseFilter
 
 
-class {ModelClass}Filter(BaseModel):
-    """Query filters for {ModelClass}."""
-    pass
+class {ModelClass}Filter(BaseFilter):
+    _lookups: ClassVar[Dict[str, str]] = {{"name": "icontains"}}
+
+    name: Optional[str] = None
 ''',
         "views.py": '''from app.views import ModelViewSet
-from .schemas import {ModelClass}Response, {ModelClass}Create
+from .filters import {ModelClass}Filter
+from .models import {ModelClass}
+from .schemas import {ModelClass}Create, {ModelClass}Response, {ModelClass}Update
 from .services import {ModelClass}Service
 
 
 class {ModelClass}ViewSet(ModelViewSet):
-    """Class-based views for {ModelClass}."""
     schema = {ModelClass}Response
     create_schema = {ModelClass}Create
+    update_schema = {ModelClass}Update
+    filter_class = {ModelClass}Filter
     service = {ModelClass}Service
+    model = {ModelClass}
+    owner_field = "owner_id"
     tags = ["{app_name}"]
 
     permissions = {{
-        "list": [],
-        "retrieve": [],
+        "list": ["AUTHENTICATED"],
+        "retrieve": ["AUTHENTICATED"],
         "create": ["AUTHENTICATED"],
         "update": ["AUTHENTICATED"],
         "delete": ["ADMIN"],
     }}
 ''',
-        "routers.py": '''from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-from app.database import get_db
-from .schemas import {ModelClass}Create, {ModelClass}Response
-from .services import {ModelClass}Service
+        "routers.py": '''from .views import {ModelClass}ViewSet
 
-router = APIRouter(prefix="/{app_name}", tags=["{app_name}"])
-
-
-@router.get("", response_model=list[{ModelClass}Response])
-async def list_{app_name}(
-    skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(get_db),
-):
-    """List all {app_name}."""
-    return await {ModelClass}Service.list(db, skip, limit)
-
-
-@router.get("/{{id}}", response_model={ModelClass}Response)
-async def get_{app_name}(
-    id: int,
-    db: Session = Depends(get_db),
-):
-    """Get a specific {app_name}."""
-    return await {ModelClass}Service.get(db, id)
-
-
-@router.post("", response_model={ModelClass}Response)
-async def create_{app_name}(
-    data: {ModelClass}Create,
-    db: Session = Depends(get_db),
-):
-    """Create a new {app_name}."""
-    return await {ModelClass}Service.create(db, data)
-
-
-@router.put("/{{id}}", response_model={ModelClass}Response)
-async def update_{app_name}(
-    id: int,
-    data: {ModelClass}Create,
-    db: Session = Depends(get_db),
-):
-    """Update a {app_name}."""
-    return await {ModelClass}Service.update(db, id, data)
-
-
-@router.delete("/{{id}}")
-async def delete_{app_name}(
-    id: int,
-    db: Session = Depends(get_db),
-):
-    """Delete a {app_name}."""
-    success = await {ModelClass}Service.delete(db, id)
-    return {{"deleted": success}}
+router = {ModelClass}ViewSet().router
 ''',
     }
 
@@ -331,14 +297,54 @@ async def test_{app_name}_list():
     test_file.write_text(test_content)
     print(f"  ✓ Created test_{app_name}.py")
 
+    _register_app_in_main(app_name)
+    _register_models_in_alembic(app_name)
+    _register_models_in_celery(app_name)
+
     print(f"\n✓ App '{app_name}' created successfully!")
     print(f"\nNext steps:")
-    print(f"1. Update models.py with your fields")
-    print(f"2. Register the router in app/main.py:")
-    print(f"   from app.{app_name}.routers import router as {app_name}_router")
-    print(f"   app.include_router({app_name}_router, prefix=settings.API_V1_STR)")
-    print(f"3. Run: python manage.py makemigrations auto")
-    print(f"4. Run: python manage.py migrate")
+    print(f"1. Adjust models.py / schemas.py if needed")
+    print(f"2. Run: python manage.py makemigrations auto")
+    print(f"3. Run: python manage.py migrate")
+
+
+def _register_app_in_main(app_name: str):
+    main_path = Path("app/main.py")
+    content = main_path.read_text()
+    import_line = f"from app.{app_name}.routers import router as {app_name}_router"
+    include_line = (
+        f'app.include_router({app_name}_router, prefix=f"{{settings.API_V1_STR}}/{app_name}")'
+    )
+    if import_line not in content:
+        marker = "from app.users.views import UserViewSet"
+        content = content.replace(marker, f"{marker}\n{import_line}")
+    if include_line not in content:
+        marker = 'app.include_router(UserViewSet().router, prefix=f"{settings.API_V1_STR}/users")'
+        content = content.replace(marker, f"{marker}\n{include_line}")
+    main_path.write_text(content)
+    print(f"  ✓ Registered router in app/main.py")
+
+
+def _register_models_in_alembic(app_name: str):
+    env_path = Path("alembic/env.py")
+    content = env_path.read_text()
+    import_line = f"from app.{app_name}.models import *  # noqa: F401, F403"
+    if import_line not in content:
+        marker = "from app.users.models import User  # noqa: F401"
+        content = content.replace(marker, f"{marker}\n{import_line}")
+        env_path.write_text(content)
+        print(f"  ✓ Registered models in alembic/env.py")
+
+
+def _register_models_in_celery(app_name: str):
+    celery_path = Path("app/celery_app.py")
+    content = celery_path.read_text()
+    import_line = f"from app.{app_name}.models import *  # noqa: F401, F403"
+    if import_line not in content:
+        marker = "from app.users.models import User  # noqa: F401"
+        content = content.replace(marker, f"{marker}\n{import_line}")
+        celery_path.write_text(content)
+        print(f"  ✓ Registered models in app/celery_app.py")
 
 
 def show_migrations(args):
