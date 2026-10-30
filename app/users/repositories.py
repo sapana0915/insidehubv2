@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy.orm import Session
 from .models import User
 from app.core.exceptions import NotFoundException
@@ -5,7 +7,7 @@ from app.core.exceptions import NotFoundException
 
 class UserRepository:
     @staticmethod
-    def get_by_id(db: Session, user_id: int) -> User:
+    def get_by_id(db: Session, user_id: UUID) -> User:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             raise NotFoundException("User")
@@ -37,7 +39,7 @@ class UserRepository:
         return user
 
     @staticmethod
-    def delete(db: Session, user_id: int) -> None:
+    def delete(db: Session, user_id: UUID) -> None:
         user = UserRepository.get_by_id(db, user_id)
         db.delete(user)
         db.commit()

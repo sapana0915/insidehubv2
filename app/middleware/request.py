@@ -1,4 +1,6 @@
-from typing import Optional, Any
+from typing import Optional
+from uuid import UUID
+
 from fastapi import Request, Depends
 from app.core.security import get_token_payload
 from app.core.exceptions import UnauthorizedException
@@ -34,9 +36,9 @@ class RequestWrapper:
     async def form(self) -> dict:
         return dict(await self.request.form())
 
-    def get_user_id(self) -> int:
+    def get_user_id(self) -> UUID:
         uid = self.user.get("user_id") or self.user.get("sub")
-        return int(uid)
+        return UUID(str(uid))
 
     def get_user_role(self) -> str:
         return self.user.get("role")
@@ -50,13 +52,15 @@ async def get_request_wrapper(
 
 async def get_optional_request_wrapper(request: Request) -> RequestWrapper:
     """Get request wrapper with optional authentication"""
-    try:
-        from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-        security = HTTPBearer()
-        credentials: HTTPAuthorizationCredentials = await security(request)
-        from app.core.security import decode_token
-        user = decode_token(credentials.credentials)
-    except Exception:
-        user = None
+    from app.core.security import decode_token
+
+    user = None
+    auth_header = request.headers.get("authorization", "")
+    scheme, _, token = auth_header.partition(" ")
+    if scheme.lower() == "bearer" and token:
+        try:
+            user = decode_token(token)
+        except UnauthorizedException:
+            user = None
 
     return RequestWrapper(request, user=user)

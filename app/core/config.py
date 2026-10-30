@@ -6,17 +6,18 @@ from typing import Any, Dict, List, Literal
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 Environment = Literal["dev", "prod", "test"]
 
 CONFIG: Dict[str, Dict[str, Any]] = {
     "dev": {
         "DEBUG": True,
         "SECRET_KEY": "dev-secret-key-change-in-production",
-        "DATABASE_URL": "postgresql://fastapi_user:fastapi_password@localhost:5432/fastapi_db",
-        "REDIS_URL": "redis://localhost:6379/0",
-        "CELERY_BROKER_URL": "amqp://guest:guest@localhost:5672//",
-        "CELERY_RESULT_BACKEND_URL": "redis://localhost:6379/0",
-        "CORS_ORIGINS": "http://localhost:3000,http://localhost:8000",
+        "DATABASE_URL": "postgresql://postgres:pgadmin12345@db:5432/insidehubv2_db",
+        "REDIS_URL": "redis://redis:6379/0",
+        "CELERY_BROKER_URL": "amqp://guest:guest@rabbitmq:5672//",
+        "CELERY_RESULT_BACKEND_URL": "redis://redis:6379/0",
+        "CORS_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000",
     },
     "prod": {
         "DEBUG": False,
@@ -51,6 +52,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        enable_decoding=False,
     )
 
     ENVIRONMENT: Environment = "dev"
@@ -61,12 +63,16 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
-    DATABASE_URL: str = "postgresql://fastapi_user:fastapi_password@localhost:5432/fastapi_db"
+    DATABASE_URL: str = "postgresql://postgres:pgadmin12345@db:5432/insidehubv2_db"
     REDIS_URL: str = "redis://localhost:6379/0"
     CELERY_BROKER_URL: str = "amqp://guest:guest@localhost:5672//"
     CELERY_RESULT_BACKEND_URL: str = "redis://localhost:6379/0"
 
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
+
+    MEDIA_DIR: str = "media"
+    MEDIA_URL: str = "/media"
+    MAX_UPLOAD_BYTES: int = 5 * 1024 * 1024
 
     def __init__(self, **kwargs: Any) -> None:
         block = _env_block()

@@ -44,13 +44,13 @@ def send_email_task(email: str, subject: str, message: str) -> dict:
 
 
 @shared_task
-def process_data_task(data: dict, user_id: int) -> dict:
+def process_data_task(data: dict, user_id: str) -> dict:
     """
     Placeholder task for processing data asynchronously.
 
     Args:
         data: Data to process
-        user_id: User ID for context
+        user_id: User UUID (string) for context
 
     Returns:
         dict: Processing result

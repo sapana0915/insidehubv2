@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime
@@ -21,11 +23,22 @@ class UserUpdate(BaseModel):
 
 
 class UserResponse(UserBase):
-    id: int
+    id: UUID
     is_active: bool
     is_admin: bool
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PublicUserResponse(BaseModel):
+    id: UUID
+    username: str
+    full_name: Optional[str] = None
+    created_at: datetime
+    post_count: int = 0
 
     class Config:
         from_attributes = True
