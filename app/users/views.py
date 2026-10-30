@@ -13,6 +13,7 @@ class UserViewSet(ModelViewSet):
     service = UserService
     model = User
     tags = ["users-crud"]
+    owner_field = "id"
 
     permissions = {
         "list": ["AUTHENTICATED", "ADMIN"],

@@ -1,18 +1,23 @@
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.database import get_db
 from app.middleware.error_handler import setup_exception_handlers
+from app.posts.routers import router as posts_router
+from app.posts.views import PostViewSet
 from app.users.routers import router as users_router
 from app.users.views import UserViewSet
 
 app = FastAPI(
-    title="FastAPI Boilerplate",
-    description="A production-ready FastAPI boilerplate",
+    title="InsideHub API",
+    description="Blogs, photos and travel stories, organised by category.",
     version="1.0.0",
 )
 
@@ -26,14 +31,21 @@ app.add_middleware(
 
 setup_exception_handlers(app)
 
+# Explicit routers go first so paths like /users/me and /posts/categories
+# are matched before the viewsets' /{id} routes.
 app.include_router(users_router, prefix=settings.API_V1_STR)
+app.include_router(posts_router, prefix=settings.API_V1_STR)
 app.include_router(UserViewSet().router, prefix=f"{settings.API_V1_STR}/users")
+app.include_router(PostViewSet().router, prefix=f"{settings.API_V1_STR}/posts")
+
+Path(settings.MEDIA_DIR).mkdir(parents=True, exist_ok=True)
+app.mount(settings.MEDIA_URL, StaticFiles(directory=settings.MEDIA_DIR), name="media")
 
 
 @app.get("/")
 def root():
     return {
-        "message": "Welcome to FastAPI Boilerplate",
+        "message": "Welcome to the InsideHub",
         "docs": "/docs",
         "api_v1": settings.API_V1_STR,
     }

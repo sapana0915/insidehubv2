@@ -1,4 +1,5 @@
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional, Tuple, Type
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, create_model
@@ -7,7 +8,11 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import ForbiddenException, NotFoundException
 from app.core.filters import BaseFilter
 from app.database import get_db
-from app.middleware.request import RequestWrapper, get_request_wrapper
+from app.middleware.request import (
+    RequestWrapper,
+    get_optional_request_wrapper,
+    get_request_wrapper,
+)
 
 
 class ModelViewSet:
@@ -25,6 +30,8 @@ class ModelViewSet:
     tags: List[str] = []
     permissions: Dict[str, List[str]] = {}
     owner_field: Optional[str] = None
+    # Actions restricted to the owner (admins bypass). "list" scopes results to the caller.
+    owner_actions: Tuple[str, ...] = ("list", "retrieve", "update", "delete")
 
     def __init__(self):
         self.router = APIRouter(tags=self.tags)
@@ -38,11 +45,28 @@ class ModelViewSet:
         self.router.add_api_route("/{id}", self._make_partial_update(), methods=["PATCH"], response_model=self.schema)
         self.router.add_api_route("/{id}", self._make_destroy(), methods=["DELETE"])
 
+    def _request_dependency(self, action: str):
+        """Actions without required permissions accept anonymous callers."""
+        if self.permissions.get(action):
+            return get_request_wrapper
+        return get_optional_request_wrapper
+
     def _normalize_role(self, role: Optional[str]) -> str:
         return (role or "").strip().lower()
 
     def _is_admin(self, request: RequestWrapper) -> bool:
+        if request._user is None:
+            return False
         return self._normalize_role(request.get_user_role()) == "admin"
+
+    def scope_list_to_owner(self, request: Optional[RequestWrapper]) -> bool:
+        return bool(
+            self.owner_field
+            and "list" in self.owner_actions
+            and request is not None
+            and request._user is not None
+            and not self._is_admin(request)
+        )
 
     def _check_permission(self, action: str, request: RequestWrapper):
         required = self.permissions.get(action, [])
@@ -59,13 +83,15 @@ class ModelViewSet:
                 return
         raise ForbiddenException(f"Not permitted to {action}")
 
-    def _get_user_id(self, request: RequestWrapper) -> int:
+    def _get_user_id(self, request: RequestWrapper) -> UUID:
         payload = request.user
         uid = payload.get("user_id") or payload.get("sub")
-        return int(uid)
+        return UUID(str(uid))
 
-    def _get_owned_or_404(self, db: Session, obj_id: int, request: RequestWrapper):
+    def _get_owned_or_404(self, db: Session, obj_id: UUID, request: RequestWrapper, action: str):
         obj = self.service.get(db, obj_id)
+        if action not in self.owner_actions:
+            return obj
         if (
             self.owner_field
             and self.model
@@ -85,6 +111,7 @@ class ModelViewSet:
     def _make_list(self):
         viewset = self
         FilterModel = self._filter_query_model()
+        request_dep = self._request_dependency("list")
 
         if FilterModel is not None:
 
@@ -92,7 +119,7 @@ class ModelViewSet:
                 skip: int = Query(0, ge=0),
                 limit: int = Query(10, ge=1, le=100),
                 filters: FilterModel = Depends(),  # type: ignore[valid-type]
-                request: RequestWrapper = Depends(get_request_wrapper),
+                request: RequestWrapper = Depends(request_dep),
                 db: Session = Depends(get_db),
             ):
                 viewset._check_permission("list", request)
@@ -113,7 +140,7 @@ class ModelViewSet:
         def list_items(
             skip: int = Query(0, ge=0),
             limit: int = Query(10, ge=1, le=100),
-            request: RequestWrapper = Depends(get_request_wrapper),
+            request: RequestWrapper = Depends(request_dep),
             db: Session = Depends(get_db),
         ):
             viewset._check_permission("list", request)
@@ -139,14 +166,15 @@ class ModelViewSet:
 
     def _make_retrieve(self):
         viewset = self
+        request_dep = self._request_dependency("retrieve")
 
         def retrieve(
-            id: int,
-            request: RequestWrapper = Depends(get_request_wrapper),
+            id: UUID,
+            request: RequestWrapper = Depends(request_dep),
             db: Session = Depends(get_db),
         ):
             viewset._check_permission("retrieve", request)
-            return viewset._get_owned_or_404(db, id, request)
+            return viewset._get_owned_or_404(db, id, request, "retrieve")
 
         return retrieve
 
@@ -171,13 +199,13 @@ class ModelViewSet:
         BodySchema = self.update_schema or self.create_schema or self.schema
 
         def update(
-            id: int,
+            id: UUID,
             data: BodySchema,  # type: ignore[valid-type]
             request: RequestWrapper = Depends(get_request_wrapper),
             db: Session = Depends(get_db),
         ):
             viewset._check_permission("update", request)
-            viewset._get_owned_or_404(db, id, request)
+            viewset._get_owned_or_404(db, id, request, "update")
             return viewset.service.update(db, id, data)
 
         update.__annotations__["data"] = BodySchema
@@ -188,13 +216,13 @@ class ModelViewSet:
         BodySchema = self.update_schema or self.create_schema or self.schema
 
         def partial_update(
-            id: int,
+            id: UUID,
             data: BodySchema,  # type: ignore[valid-type]
             request: RequestWrapper = Depends(get_request_wrapper),
             db: Session = Depends(get_db),
         ):
             viewset._check_permission("update", request)
-            viewset._get_owned_or_404(db, id, request)
+            viewset._get_owned_or_404(db, id, request, "update")
             return viewset.service.partial_update(db, id, data)
 
         partial_update.__annotations__["data"] = BodySchema
@@ -204,12 +232,12 @@ class ModelViewSet:
         viewset = self
 
         def destroy(
-            id: int,
+            id: UUID,
             request: RequestWrapper = Depends(get_request_wrapper),
             db: Session = Depends(get_db),
         ):
             viewset._check_permission("delete", request)
-            viewset._get_owned_or_404(db, id, request)
+            viewset._get_owned_or_404(db, id, request, "delete")
             viewset.service.delete(db, id)
             return {"message": "Deleted successfully"}
 

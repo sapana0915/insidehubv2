@@ -1,4 +1,5 @@
-from typing import Any, Optional
+from typing import Any
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -13,7 +14,7 @@ class UserService:
     model = User
 
     @staticmethod
-    def get(db: Session, user_id: int) -> User:
+    def get(db: Session, user_id: UUID) -> User:
         return UserRepository.get_by_id(db, user_id)
 
     @staticmethod
@@ -28,7 +29,7 @@ class UserService:
         query = db.query(User)
         if filters:
             query = filters.apply(query, User)
-        if viewset and viewset.owner_field and request and not viewset._is_admin(request):
+        if viewset and viewset.scope_list_to_owner(request):
             column = getattr(User, viewset.owner_field)
             uid = viewset._get_user_id(request)
             query = query.filter(column == uid)
@@ -53,7 +54,7 @@ class UserService:
         return UserRepository.create(db, user)
 
     @staticmethod
-    def update(db: Session, user_id: int, user_data: UserUpdate) -> User:
+    def update(db: Session, user_id: UUID, user_data: UserUpdate) -> User:
         user = UserRepository.get_by_id(db, user_id)
 
         if user_data.email and user_data.email != user.email:
@@ -77,11 +78,11 @@ class UserService:
         return UserRepository.update(db, user)
 
     @staticmethod
-    def partial_update(db: Session, user_id: int, user_data: UserUpdate) -> User:
+    def partial_update(db: Session, user_id: UUID, user_data: UserUpdate) -> User:
         return UserService.update(db, user_id, user_data)
 
     @staticmethod
-    def delete(db: Session, user_id: int) -> None:
+    def delete(db: Session, user_id: UUID) -> None:
         UserRepository.delete(db, user_id)
 
     @staticmethod
